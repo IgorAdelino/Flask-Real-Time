@@ -46,13 +46,38 @@ def get_image(file_name):
 
 @app.route('/payments/pix/confirmation', methods=['POST'])
 def pix_confirmation():
-  return jsonify({'message': "The payment has been confirmed"})
+  data = request.get_json()
+
+  if 'bank_payment_id' not in data or 'value' not in data:
+    return jsonify({'message': "Invalid payment data"}), 400
+  
+  if data['value'] <= 0:
+    return jsonify({'message': "Invalid payment data"}), 400
+
+  payment = Payment.query.filter_by(bank_payment_id=data.get("bank_payment_id")).first()
+
+  if not payment:
+    return jsonify({'message': "Payment not found"}), 404
+
+  if payment.value != data['value']:
+    return jsonify({'message': "Invalid payment data"}), 400
+  
+  if payment.paid:
+    return jsonify({'message': "The payment has already been confirmed"}), 400
+
+  payment.paid = True
+  db.session.commit()
+  socketio.emit(f'payment-confirmed-{payment.id}')
+
+  return jsonify({"message": "The payment has been confirmed"})
 
 @app.route('/payments/pix/<int:payment_id>', methods=['GET'])
 def get_payment_pix(payment_id):
   payment = Payment.query.get(payment_id)
 
-
+  if payment.paid:
+    return render_template('confirmed_payment.html')
+  
   return render_template('payment.html', payment_id=payment.id, value=payment.value, 
                          host="http://127.0.0.1:5000", qr_code=payment.qr_code)
 
